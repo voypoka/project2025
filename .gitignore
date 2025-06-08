@@ -1,1 +1,5 @@
 venv
+
+newsscraper/newsscraper/__pycache__
+newsscraper/newsscraper/spiders/__pycache__
+
