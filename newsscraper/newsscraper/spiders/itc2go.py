@@ -45,7 +45,6 @@ class Itc2Go(scrapy.Spider):
             item = {
                 "name":       self.get_title(info),
                 "start":      self.get_start_date(info),
-                "end":        self.get_start_date(info),
                 "tags":       self.get_tags(info),
             }
 
@@ -72,9 +71,27 @@ class Itc2Go(scrapy.Spider):
 
     def parse_event(self, response):
         item = response.meta["item"]
+
+        date_info_html = response.css("p.date-info").get()
+        if date_info_html:
+            date_info_text = self.clear_description(date_info_html)
+
+            date_range = re.search(r'(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{2}\.\d{2}\.\d{4})', date_info_text)
+            single_date = re.search(r'(\d{2}\.\d{2}\.\d{4})', date_info_text)
+
+            if date_range:
+                item["end"] = date_range.group(2)
+            elif single_date:
+                item["end"] = single_date.group(1)
+            else:
+                item["end"] = None
+        else:
+            item["end"] = None
+
         raw = response.css("div.tab-item.description-info").get()
         item["description"] = self.clear_description(raw) if raw else None
 
         location = response.css("p.place-info").get()
         item["location"] = self.clear_description(location)[len("Место проведения: "):].replace("\n", "") if location else None
+
         yield item
