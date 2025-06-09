@@ -34,8 +34,7 @@ class AllEventsIT(scrapy.Spider):
         return ', '.join(sel.getall()).strip()
 
     def get_tags(self, info):
-        tags = info.css("div.teg_content a::text").getall()
-        return ', '.join(t.strip() for t in tags if t.strip())
+        return info.css("div.teg_content a::text").getall()
 
     def parse(self, response):
         base = "https://all-events.ru"

@@ -1,5 +1,7 @@
 import scrapy
 import re
+from w3lib.html import remove_tags
+import html
 
 class Itc2Go(scrapy.Spider):
     name = "itc2go"
@@ -8,10 +10,15 @@ class Itc2Go(scrapy.Spider):
     ]
 
     def get_title(self, info):
-        return info.css("div.index-events div#index_events div.index-events-item.media div.media-body a.event-title::text").get()
+        return info.css("a.media-left.image-link").attrib["title"]
     
     def get_start_date(self, info):
-        return info.css("div.index-events div#index_events div.index-events-item.media div.media-body div.date-place").get()
+        result = info.css("div.date-place::text").get()
+        match = re.search(r'(\d{2}\.\d{2}\.\d{4})(?:\s*\|\s*(\S.*))?', result)
+        if match:
+            date = match.group(1)
+            city = match.group(2).strip() if match.group(2) else None
+        return date
 
 
     def get_end_date(self, info):
@@ -24,19 +31,50 @@ class Itc2Go(scrapy.Spider):
         return ""
     
     def get_tags(self, info):
-        tags_div = info.css("div.index-events div#index_events div.index-events-item.media div.media-body div.event-themes").get()
-        # Получаем все ссылки (теги) из div
         tags = info.css("div.event-themes a::text").getall()
-        return ', '.join(tag.strip() for tag in tags)  # Объединяем их в строку через запятую
+        return tags 
             
     
     def parse(self, response):
-        for info in response.css("div.index-events div#index_events div.index-events-item.media"):
-            yield {
-                "name": self.get_title(info),
-                "start": self.get_start_date(info),
-                "end": self.get_end_date(info),
-                "location": self.get_location(info),
-                "description": self.get_description(info),
-                "tags": self.get_tags(info)
+        base = "https://ict2go.ru"
+        for info in response.css("div.index-events-item.media"):
+            rel_link = info.css("a.event-title").attrib["href"]
+            if "/events" not in rel_link:
+                continue
+
+            item = {
+                "name":       self.get_title(info),
+                "start":      self.get_start_date(info),
+                "end":        self.get_start_date(info),
+                "tags":       self.get_tags(info),
             }
+
+            rel_link = info.css("a.event-title").attrib["href"]
+            if rel_link and "/events/" in rel_link:
+                yield response.follow(
+                    base + rel_link,
+                    callback=self.parse_event,
+                    meta={"item": item},
+                    dont_filter=True
+                )
+            else:
+                item["description"] = None
+                yield item
+
+    def clear_description(self, raw_html):
+        text = remove_tags(raw_html)
+        text = html.unescape(text)
+        text = text.replace('\r', '').replace('\t', '')
+        lines = [re.sub(r' {2,}', ' ', line).strip() for line in text.split('\n')]
+        lines = [line for line in lines if line]
+
+        return '\n'.join(lines)
+
+    def parse_event(self, response):
+        item = response.meta["item"]
+        raw = response.css("div.tab-item.description-info").get()
+        item["description"] = self.clear_description(raw) if raw else None
+
+        location = response.css("p.place-info").get()
+        item["location"] = self.clear_description(location)[len("Место проведения: "):].replace("\n", "") if location else None
+        yield item
